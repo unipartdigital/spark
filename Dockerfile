@@ -2,9 +2,6 @@
 # just 'python3' package) is more work than installing openjdk8 correctly
 FROM python:3.7-alpine
 
-# Path to Spark dist package to copy into container
-# built with ./dev/make-distribution.sh --tgz <other args>
-ARG SPARK_PACKAGE
 ARG SPARK_HOME=/opt/spark
 ARG SPARK_USER=spark
 ARG SPARK_GROUP=spark
@@ -41,15 +38,13 @@ RUN echo "==> Setting up SPARK_HOME..." \
     && chown -R ${SPARK_USER}:${SPARK_GROUP} ${SPARK_HOME} \
     && chmod -R 755 ${SPARK_HOME}
 
+COPY dist/* ${SPARK_HOME}
+
 COPY run.sh /
 RUN chmod +x /run.sh
 
-COPY ${SPARK_PACKAGE} /tmp
 
 WORKDIR ${SPARK_HOME}
-
-RUN echo "==> Unpacking Spark package ${SPARK_PACKAGE} to ${SPARK_HOME}" \
-    && tar -xvzf /tmp/${SPARK_PACKAGE} --strip-components=1
 
 # Non-root
 USER ${SPARK_USER}

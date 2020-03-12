@@ -1,0 +1,55 @@
+language: java
+dist: bionic
+
+jdk: openjdk8
+
+addons:
+  apt:
+    packages:
+      - python3-pip
+      - python3-setuptools
+
+# Required by test script for determining which tests to run based on Git changes
+git:
+  depth: false
+
+# Note: .travis/set_env.sh exports some environment variables *common* to build deploy steps
+before_install:
+  - source .travis/set_env.sh
+  - python3 -m pip install -r dev/requirements.txt
+
+before_deploy:
+  - source .travis/set_env.sh
+  - .travis/check_tag.sh
+  - docker login -u ${DOCKER_USERNAME} -p ${DOCKER_PASSWORD}
+
+script: .travis/build.sh $SPARK_IMAGE_NAME
+
+deploy:
+  # Push a Docker image for long lived version branches (e.g. 'branch-2.4', 'branch-3.0')
+  # OR git tags (e.g. our patched 'release" of an upstream version)
+  - provider: script
+    skip_cleanup: true
+    script:
+      - docker push $IMAGE_NAME
+    on:
+      condition: ${TRAVIS_BRANCH} =~ branch-.+ || -n ${TRAVIS_TAG}
+  # Add the Spark distribution package to GitHub release assets
+  - provider: releases
+    skip_cleanup: true
+    api_key:
+      # FIXME: This is tied to github.com/SteadBytes account and should use a github.com/unipartdigital bot API Key
+      secure: j4K57og6HF5bxSPGZ7MbxDXpA46v7wFoPMYDAIjeEQ8YOZ7t43WTcyu/c/K9/ME5vZP/MclzdcbvTttJEEt7uKsZsSuXuLez2OYbc1NyAZaRjs7LRAaBP5Otl/TQQyCebGeLiNz9CVPgTIPwu/Q1XWuJ7rOGNPo1b8EUaCBqvDLDR4LQf6Pvvc87Tuad89+DCZ3losegUxEzWNQk0rmwW76VOaOlbxL+wy8J38vNHs9BTgjOKR+HPV98QdV8eTxbNCDsMbq8tPuKOM8KdPcQEHnoC5Bod0jzfG9IqUiTlxav2qGUFh5nq7tW7ObUpPGsI4FSbiwZLwTF/qzcM9Fg6sTEg3bP/3wcrAqNf0fhEmYGeOosPiVnX8D2QvpeHSQ/WSPSCYKc9NbxCwmD1F5a8pKiZnWUn9mCxylLf7qkrRJfK18YOaEVmDXYjOJpODIEneCtNNVATr9IlQt40xBbrEB6krPWyqUPXLa798/GLAe9ZcPTs4d9AyNSHShYslrm1VMWSaZKAJ4nYAA9KCETQ8dWOQiqa59Bmbg/9v3EcQfOyAB30o+kbCX8pa2zEwveGcBH+EdZb0qxLjGkg+YFnQVqOJzLGwx6Wlp10fx4nkv6d/yop3HY0D8u/H15Gi9UWGai3asv83El7eSRx41CRRoNrMpLycmomwvGippKcPQ=
+    file: spark-*.tgz
+    on:
+      tags: true
+
+before_cache:
+  - rm -f  $HOME/.gradle/caches/modules-2/modules-2.lock
+  - rm -fr $HOME/.gradle/caches/*/plugin-resolution/
+
+cache:
+  directories:
+    - $HOME/.gradle/caches/
+    - $HOME/.gradle/wrapper/
+    - $HOME/.m2

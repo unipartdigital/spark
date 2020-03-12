@@ -1,3 +1,10 @@
+# Not intended to be upstreamed
+Dockerfile
+docker-compose.yml
+run.sh
+.travis.yml
+.travis/*
+
 target
 cache
 .gitignore
