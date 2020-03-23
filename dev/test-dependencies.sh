@@ -17,7 +17,7 @@
 # limitations under the License.
 #
 
-set -e
+set -ex
 
 FWDIR="$(cd "`dirname $0`"/..; pwd)"
 cd "$FWDIR"
@@ -32,9 +32,9 @@ export LC_ALL=C
 HADOOP2_MODULE_PROFILES="-Phive-thriftserver -Pmesos -Pkubernetes -Pyarn -Phive"
 MVN="build/mvn"
 HADOOP_HIVE_PROFILES=(
-    hadoop-2.7-hive-1.2
+#    hadoop-2.7-hive-1.2
     hadoop-2.7-hive-2.3
-    hadoop-3.2-hive-2.3
+#    hadoop-3.2-hive-2.3
 )
 
 # We'll switch the version to a temp. one, publish POMs using that new version, then switch back to
@@ -121,7 +121,8 @@ for HADOOP_HIVE_PROFILE in "${HADOOP_HIVE_PROFILES[@]}"; do
     git diff \
     --no-index \
     dev/deps/spark-deps-$HADOOP_HIVE_PROFILE \
-    dev/pr-deps/spark-deps-$HADOOP_HIVE_PROFILE \
+    dev/pr-deps/spark-deps-$HADOOP_HIVE_PROFILE
+  # Delete the temporary POMs that we wrote to the local Maven repo:\
   )"
   set -e
   if [ "$dep_diff" != "" ]; then

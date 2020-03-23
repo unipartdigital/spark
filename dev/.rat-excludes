@@ -1,3 +1,13 @@
+# Not intended to be upstreamed
+Dockerfile*
+Makefile
+.dockerignore
+GangliaReporter.java
+.Rprofile
+env/*
+renv/*
+renv.lock
+
 target
 cache
 .gitignore
@@ -33,16 +43,12 @@ graphlib-dot.min.js
 sorttable.js
 vis.min.js
 vis.min.css
-dataTables.bootstrap4.1.10.20.min.css
-dataTables.bootstrap4.1.10.20.min.js
-dataTables.rowsGroup.js
-jquery.blockUI.min.js
-jquery.cookies.2.2.0.min.js
-jquery.dataTables.1.10.20.min.css
-jquery.dataTables.1.10.20.min.js
-jquery.mustache.js
-jsonFormatter.min.css
-jsonFormatter.min.js
+dataTables.*.css
+dataTables.*.js
+jquery.*.js
+jquery.*.css
+jsonFormatter.*.css
+jsonFormatter.*.js
 .*avsc
 .*txt
 .*json
@@ -122,4 +128,3 @@ announce.tmpl
 vote.tmpl
 SessionManager.java
 SessionHandler.java
-GangliaReporter.java

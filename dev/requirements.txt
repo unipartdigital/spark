@@ -1,3 +1,7 @@
+# Python requirements for build/test scripts
+setuptools
+numpy
+mkdocs
 flake8==3.5.0
 jira==1.0.3
 PyGithub==1.26.0

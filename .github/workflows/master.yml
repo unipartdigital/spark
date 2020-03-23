@@ -2,11 +2,13 @@ name: master
 
 on:
   push:
-    branches:
-    - master
-  pull_request:
-    branches:
-    - master
+    branches-ignore:
+      - '**' # FIXME - temporary!
+#    branches:
+#    - master
+#  pull_request:
+#    branches:
+#    - master
 
 jobs:
   build:
