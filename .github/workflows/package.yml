@@ -1,0 +1,193 @@
+name: master
+
+# Run only on master and long-lived branch pushes or Git tag releases
+# Note: 'docker' job assumes these conditions for setting the Docker image tag - ensure that the 'docker' job is
+# updated accordingly if these are changed.
+on:
+  push:
+    branches:
+      - master
+      - branch-*
+    # Releases
+    tags:
+      - v*
+  # FIXME: During WIP only -> this should only run on push or tags
+  pull_request:
+    branches:
+      - master
+
+# TODO: Run test suite using dev/run-tests script
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        java: [ '1.8']
+        hadoop: [ 'hadoop-2.7']
+        hive: [ 'hive-1.2']
+
+    name: Package Spark - JDK${{ matrix.java }}/${{ matrix.hadoop }}/${{ matrix.hive }}
+
+    steps:
+      - uses: actions/checkout@master
+        with:
+          # Allow ./dev/run-tests.py to query git history to determine tests to run
+          fetch-depth: 0
+      # Java/Maven caching taken from existing upstream master.yml
+      # We split caches because GitHub Action Cache has a 400MB-size limit.
+      - uses: actions/cache@v1
+        with:
+          path: build
+          key: build-${{ hashFiles('**/pom.xml') }}
+          restore-keys: |
+            build-
+      - uses: actions/cache@v1
+        with:
+          path: ~/.m2/repository/com
+          key: ${{ matrix.java }}-${{ matrix.hadoop }}-maven-com-${{ hashFiles('**/pom.xml') }}
+          restore-keys: |
+            ${{ matrix.java }}-${{ matrix.hadoop }}-maven-com-
+      - uses: actions/cache@v1
+        with:
+          path: ~/.m2/repository/org
+          key: ${{ matrix.java }}-${{ matrix.hadoop }}-maven-org-${{ hashFiles('**/pom.xml') }}
+          restore-keys: |
+            ${{ matrix.java }}-${{ matrix.hadoop }}-maven-org-
+      - uses: actions/cache@v1
+        with:
+          path: ~/.m2/repository/net
+          key: ${{ matrix.java }}-${{ matrix.hadoop }}-maven-net-${{ hashFiles('**/pom.xml') }}
+          restore-keys: |
+            ${{ matrix.java }}-${{ matrix.hadoop }}-maven-net-
+      - uses: actions/cache@v1
+        with:
+          path: ~/.m2/repository/io
+          key: ${{ matrix.java }}-${{ matrix.hadoop }}-maven-io-${{ hashFiles('**/pom.xml') }}
+          restore-keys: |
+            ${{ matrix.java }}-${{ matrix.hadoop }}-maven-io-
+      - name: Set up JDK ${{ matrix.java }}
+        uses: actions/setup-java@v1
+        with:
+          java-version: ${{ matrix.java }}
+      # Enforce our Git tag == Spark version rules
+      - name: Check Spark version matches Git tag
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          # Inspired by some of the mvn incantations in dev/make-distribution.sh
+          SPARK_VERSION=$(mvn help:evaluate -Dexpression=project.version $@ 2>/dev/null\
+            | grep -v "INFO"\
+            | grep -v "WARNING"\
+            | tail -n 1)
+          echo "Found Spark version: $SPARK_VERSION"
+          EXPECTED_TAG=v$SPARK_VERSION
+          echo "Expecting Git tag: $EXPECTED_TAG"
+          # Use parameter expansion to extract *just* the tag name from $GITHUB_REF
+          # For a tag push, $GITHUB_REF will be of the form refs/tags/<the_tag_name>
+          # https://help.github.com/en/actions/configuring-and-managing-workflows/using-environment-variables#default-environment-variables
+          TAG=${GITHUB_REF/refs\/tags\//}
+          echo "Found Git tag: $TAG"
+          if [ "$TAG" != "$EXPECTED_TAG" ]
+            then
+              echo "Tag '$TAG' does not match expected tag '$EXPECTED_TAG'"
+              exit 1;
+          fi
+      - uses: actions/checkout@v2
+      - name: Setup Python
+        uses: actions/setup-python@v1
+        with:
+          python-version: '3.x'
+      - name: Cache pip
+        uses: actions/cache@v1
+        with:
+          # https://pip.pypa.io/en/stable/reference/pip_install/#caching
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('dev/requirements.txt') }}
+          restore-keys: ${{ runner.os }}-pip-
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r dev/requirements.txt
+      - name: Install R
+        run: |
+          echo 'deb https://cloud.r-project.org/bin/linux/ubuntu bionic-cran35/' | sudo tee -a /etc/apt/sources.list
+          curl -sL "https://keyserver.ubuntu.com/pks/lookup?op=get&search=0xE298A3A825C0D65DFD57CBB651716619E084DAB9" | sudo apt-key add
+          sudo apt-get update
+          sudo apt-get install -y r-base r-base-dev libcurl4-openssl-dev
+      - name: Cache R
+        uses: actions/cache@v1
+        with:
+          # https://rstudio.github.io/renv/articles/ci.html
+          path: ~/.local/share/renv
+          key: ${{ runner.os }}-renv-${{ hashFiles('dev/renv.lock') }}
+          restore-keys: ${{ runner.os }}-renv-
+      - name: install R packages
+        run: |
+          sudo Rscript -e "install.packages('renv')"
+          sudo Rscript -e "renv::consent(provided = TRUE)"
+          sudo Rscript -e "renv::restore(lockfile = 'dev/renv.lock')"
+      - name: Build distribution package
+        run: |
+          mkdir -p ~/.m2
+          # Build flags used in https://downloads.apache.org/spark/spark-3.0.0-preview2/spark-3.0.0-preview2-bin-hadoop2.7.tgz
+          # Note: The --tgz flag is *required* by the next step
+          ./dev/make-distribution.sh \
+            --pip --tgz \
+            -B -Pmesos -Pyarn -Pkubernetes -Psparkr -Pscala-2.12 -Phadoop-2.7 -Phive -Phive-thriftserver
+          rm -rf ~/.m2/repository/org/apache/spark
+          # Set output variable for the package name to be uploaded
+          # https://help.github.com/en/actions/reference/workflow-commands-for-github-actions#setting-an-output-parameter
+          # upload-artifact v2 (in preview at the time of writing) supports wildcards so this won't be needed
+          # https://github.com/actions/upload-artifact/issues/11
+          # Assumes that only *one* package is exists at the project root (current behaviour of dev/make-distribution.sh)
+          echo "::set-output name=package_tarname::$(echo spark-*-bin-*.tgz)"
+        id: build_package
+      - name: Upload package artifact
+        uses: actions/upload-artifact@v1
+        with:
+          name: dist-package
+          path: ${{ steps.build_package.outputs.package_tarname }}
+
+  docker:
+
+    runs-on: ubuntu-latest
+    needs: package
+    steps:
+      - uses: actions/checkout@v2
+      - name: Download package artifact from 'package' job
+        uses: actions/download-artifact@v1
+        with:
+          name: dist-package
+      - name: Unpack package artifact to dist/ for Docker build
+        run: |
+          # dist dir *should* be .gitignore'd and *should not* be cached from 'package' job, however just to be safe (
+          # (who knows what shenanigans GitHub Actions build containers might do) remove and re-create it before
+          # unpacking distribution package from 'package' job
+          sudo rm -rf dist && mkdir dist
+          tar -xvf dist-package/spark-*-bin-*.tgz -C dist --strip-components=1
+      - name: Determine Docker image tag
+        # master branch -> latest
+        # Git tags or long lived branches -> Spark version
+        run: |
+          if [ "$GITHUB_REF" == "/refs/head/master" ]
+            then
+              echo "Master branch build -> push 'latest' image tag"
+              $IMAGE_TAG=latest
+          else
+              echo "Git tag or long lived branch build -> push Spark version image tag"
+              # First line of RELEASE file has the format:
+              # Spark <spark_version> (git revision <rev>) built for Hadoop <hadoop_version>
+              # Extract <spark_version>
+              IMAGE_TAG=$(head -n1 dist/RELEASE | awk '{print $2}')
+          fi
+          # Set as output for use in next step
+          echo "::set-output name=tag::$IMAGE_TAG"
+        id: docker_tag
+      - name: Build and push Docker Container
+        uses: docker/build-push-action@v1
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+          repository: unipartdigital/spark
+          # FIXME: Disable pushes During WIP only
+          push: false
+          tags: ${{ steps.docker_tag.outputs.tag }}
